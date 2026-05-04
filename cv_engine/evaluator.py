@@ -53,11 +53,23 @@ class ExerciseEvaluator:
         annotated = bgr_frame.copy()
 
         if results.pose_landmarks:
+            self._dispatch(results.pose_landmarks.landmark, annotated)
+            
+            # Dynamic Skeleton Color based on Posture
+            if self._feedback:
+                # Red for incorrect posture
+                landmark_spec = mp_drawing.DrawingSpec(color=(0, 0, 255), thickness=2, circle_radius=2)
+                connection_spec = mp_drawing.DrawingSpec(color=(0, 0, 255), thickness=2)
+            else:
+                # Green for ideal posture
+                landmark_spec = mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=2, circle_radius=2)
+                connection_spec = mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=2)
+
             mp_drawing.draw_landmarks(
-                annotated, results.pose_landmarks, mp_pose.POSE_CONNECTIONS
+                annotated, results.pose_landmarks, mp_pose.POSE_CONNECTIONS,
+                landmark_drawing_spec=landmark_spec,
+                connection_drawing_spec=connection_spec
             )
-            lm = results.pose_landmarks.landmark
-            self._dispatch(lm, annotated)
 
         self._draw_hud(annotated)
         return annotated
@@ -78,16 +90,42 @@ class ExerciseEvaluator:
         self.form_errors[key] = self.form_errors.get(key, 0) + 1
         self._feedback = msg
 
+    def _check_torso_alignment(self, lm, sh_idx, hp_idx, kn_idx):
+        """Checks if the back is relatively straight using Shoulder-Hip-Knee angle."""
+        if not check_visibility(lm, [sh_idx, hp_idx, kn_idx], 0.6): return True
+        sh = lm_xy(lm, sh_idx); hp = lm_xy(lm, hp_idx); kn = lm_xy(lm, kn_idx)
+        angle = calculate_angle(sh, hp, kn)
+        # In a standing or seated position, this angle shouldn't drop too low unless leaning is required
+        return angle > 130 
+
+    def _check_shoulder_level(self, lm):
+        """Checks if shoulders are parallel to the ground."""
+        if not check_visibility(lm, [11, 12], 0.6): return True
+        l_sh = lm_xy(lm, 11); r_sh = lm_xy(lm, 12)
+        dy = abs(l_sh[1] - r_sh[1])
+        return dy < 0.05 # small threshold for levelness
+
     def _draw_hud(self, frame):
         h, w = frame.shape[:2]
-        cv2.rectangle(frame, (0, 0), (w, 60), (0, 0, 0), -1)
+        
+        # Top HUD (Progress)
+        cv2.rectangle(frame, (0, 0), (w, 60), (20, 20, 20), -1)
         cv2.putText(frame, f"Reps: {self.reps_completed}/{self.target_reps * self.target_sets}",
-                    (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
+                    (15, 25), cv2.FONT_HERSHEY_DUPLEX, 0.7, (255,255,255), 2)
         cv2.putText(frame, f"Phase: {self._phase} | Side: {self.side.title()}",
-                    (10, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,200), 1)
+                    (15, 50), cv2.FONT_HERSHEY_DUPLEX, 0.6, (0,255,200), 1)
+        
+        # Interactive Bottom Banner (Live Posture Feedback)
         if self._feedback:
-            cv2.putText(frame, self._feedback,
-                        (10, h - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0,80,255), 2)
+            # Red Banner for Error Correction
+            cv2.rectangle(frame, (0, h - 50), (w, h), (0, 0, 200), -1)
+            cv2.putText(frame, f"⚠️ ADJUST: {self._feedback.upper()}",
+                        (15, h - 18), cv2.FONT_HERSHEY_DUPLEX, 0.65, (255,255,255), 2)
+        else:
+            # Green Banner for Ideal Posture
+            cv2.rectangle(frame, (0, h - 50), (w, h), (0, 180, 0), -1)
+            cv2.putText(frame, "✅ PERFECT POSTURE - KEEP GOING!",
+                        (15, h - 18), cv2.FONT_HERSHEY_DUPLEX, 0.65, (255,255,255), 2)
 
     def _dispatch(self, lm, frame):
         fn = getattr(self, f"_eval_{self.exercise_id}", None)
@@ -99,7 +137,7 @@ class ExerciseEvaluator:
 
     def _eval_squat(self, lm, frame):
         # Bilateral check: uses hip width, so we need both
-        if not check_visibility(lm, [23,24,25,26,27,28], 0.6): return
+        if not check_visibility(lm, [23,24,25,26,27,28, 11, 12], 0.6): return
         
         # Track the side specified (or left by default)
         idx = self.idxs
@@ -113,15 +151,29 @@ class ExerciseEvaluator:
             self.reps_completed += 1
             self._feedback = ""
 
-        # secondary checks
+        # Posture & Biomechanic Checks for Squat
         lk = lm_xy(lm, 25); rk = lm_xy(lm, 26)
         lh = lm_xy(lm, 23); rh = lm_xy(lm, 24)
-        if abs(lk[0]-rk[0]) < abs(lh[0]-rh[0]):
+        la = lm_xy(lm, 27); ra = lm_xy(lm, 28)
+        
+        # 1. Knee Cave (Valgus)
+        if abs(lk[0]-rk[0]) < abs(lh[0]-rh[0]) * 0.8: # Knees narrower than hips
             self._log_error("knee_cave", "Push knees outward")
+            
+        # 2. Torso leaning too far forward (chest falling)
+        sh = lm_xy(lm, idx["sh"])
+        torso_angle = calculate_angle(sh, hip, knee)
+        if self._phase == "SQUATTING" and torso_angle < 70:
+            self._log_error("torso_lean", "Keep your chest up")
+            
+        # 3. Heels lifting (ankles moving significantly up relative to start)
+        # Simplified: check if ankle y is changing drastically (difficult without depth, so we use knee over toe)
+        if knee[0] > ankle[0] + 0.15: # Knee tracking way past toes
+            self._log_error("knee_over_toe", "Shift weight to your heels")
 
     def _eval_shoulder_flexion(self, lm, frame):
         idx = self.idxs
-        if not check_visibility(lm, [idx["hp"], idx["sh"], idx["el"]], 0.6): return
+        if not check_visibility(lm, [idx["hp"], idx["sh"], idx["el"], idx["wr"], idx["kn"]], 0.6): return
         hip   = lm_xy(lm, idx["hp"]); sh = lm_xy(lm, idx["sh"]); el = lm_xy(lm, idx["el"])
         angle = calculate_angle(hip, sh, el)
 
@@ -132,9 +184,13 @@ class ExerciseEvaluator:
             self.reps_completed += 1
             self._feedback = ""
 
-        wr = lm_xy(lm, 15)
+        wr = lm_xy(lm, idx["wr"])
         if calculate_angle(sh, el, wr) < 140:
             self._log_error("elbow_bend", "Keep your arm straight")
+            
+        # Posture check: Torso leaning back to cheat the weight up
+        if not self._check_torso_alignment(lm, idx["sh"], idx["hp"], idx["kn"]):
+            self._log_error("torso_lean", "Keep your back straight, don't lean back")
 
     def _eval_jumping_jacks(self, lm, frame):
         if not check_visibility(lm, [11,15,23,27], 0.6): return
@@ -158,7 +214,7 @@ class ExerciseEvaluator:
 
     def _eval_knee_extension(self, lm, frame):
         idx = self.idxs
-        if not check_visibility(lm, [idx["hp"], idx["kn"], idx["an"]], 0.6): return
+        if not check_visibility(lm, [idx["hp"], idx["kn"], idx["an"], idx["sh"]], 0.6): return
         hip   = lm_xy(lm, idx["hp"]); knee = lm_xy(lm, idx["kn"]); ankle = lm_xy(lm, idx["an"])
         angle = calculate_angle(hip, knee, ankle)
 
@@ -171,10 +227,16 @@ class ExerciseEvaluator:
 
         if angle > 178:
             self._log_error("hyperextension", "Don't lock your knee")
+            
+        # Check if thigh is raising (cheating by using hip flexors instead of quads)
+        sh = lm_xy(lm, idx["sh"])
+        hip_angle = calculate_angle(sh, hip, knee)
+        if self._phase == "FULL" and hip_angle < 130: # If sitting, angle is ~90. If it drops to 70, thigh raised.
+             self._log_error("thigh_lift", "Keep your thigh still on the chair/bed")
 
     def _eval_bicep_curl(self, lm, frame):
         idx = self.idxs
-        if not check_visibility(lm, [idx["sh"], idx["el"], idx["wr"]], 0.6): return
+        if not check_visibility(lm, [idx["sh"], idx["el"], idx["wr"], idx["hp"], idx["kn"]], 0.6): return
         sh = lm_xy(lm, idx["sh"]); el = lm_xy(lm, idx["el"]); wr = lm_xy(lm, idx["wr"])
         angle = calculate_angle(sh, el, wr)
 
@@ -185,13 +247,21 @@ class ExerciseEvaluator:
             self.reps_completed += 1
             self._feedback = ""
 
+        # Posture & cheating checks
         hp = lm_xy(lm, idx["hp"])
-        if abs(el[0] - hp[0]) > 0.05:
-            self._log_error("elbow_drift", "Keep elbows tucked")
+        
+        # 1. Elbow drift (cheating by using front deltoids)
+        # Check if elbow moves significantly forward compared to shoulder/hip
+        if el[0] < sh[0] - 0.1: # Elbow drifted forward too much
+            self._log_error("elbow_drift", "Keep your elbows tucked to your sides")
+            
+        # 2. Torso swinging (cheating by using momentum)
+        if not self._check_torso_alignment(lm, idx["sh"], idx["hp"], idx["kn"]):
+            self._log_error("torso_swing", "Keep your back straight, do not swing")
 
     def _eval_shoulder_abduction(self, lm, frame):
         idx = self.idxs
-        if not check_visibility(lm, [idx["hp"], idx["sh"], idx["el"]], 0.6): return
+        if not check_visibility(lm, [idx["hp"], idx["sh"], idx["el"], idx["kn"]], 0.6): return
         hp = lm_xy(lm, idx["hp"]); sh = lm_xy(lm, idx["sh"]); el = lm_xy(lm, idx["el"])
         angle = calculate_angle(hp, sh, el)
 
@@ -201,10 +271,15 @@ class ExerciseEvaluator:
             self._phase = "RESTING"
             self.reps_completed += 1
             self._feedback = ""
+            
+        # Posture check: Torso lateral leaning (cheating by leaning away)
+        # We can check shoulder level
+        if not self._check_shoulder_level(lm):
+            self._log_error("torso_lean", "Keep shoulders level, do not lean")
 
     def _eval_wall_pushup(self, lm, frame):
         idx = self.idxs
-        if not check_visibility(lm, [idx["sh"], idx["el"], idx["wr"]], 0.6): return
+        if not check_visibility(lm, [idx["sh"], idx["el"], idx["wr"], idx["hp"], idx["an"]], 0.6): return
         sh = lm_xy(lm, idx["sh"]); el = lm_xy(lm, idx["el"]); wr = lm_xy(lm, idx["wr"])
         angle = calculate_angle(sh, el, wr)
 
@@ -214,10 +289,16 @@ class ExerciseEvaluator:
             self._phase = "EXTENDED"
             self.reps_completed += 1
             self._feedback = ""
+            
+        # Posture check: Body must be in a straight line
+        hp = lm_xy(lm, idx["hp"]); an = lm_xy(lm, idx["an"])
+        body_angle = calculate_angle(sh, hp, an)
+        if body_angle < 160:
+            self._log_error("hips_sagging", "Keep your body in a straight line from head to heels")
 
     def _eval_single_leg_stand(self, lm, frame):
         idx = self.idxs
-        if not check_visibility(lm, [idx["hp"], idx["kn"], idx["an"]], 0.6): return
+        if not check_visibility(lm, [idx["hp"], idx["kn"], idx["an"], idx["sh"]], 0.6): return
         # Lifted knee: knee_y < hip_y
         k_y = lm[idx["kn"]].y; h_y = lm[idx["hp"]].y
 
@@ -232,12 +313,16 @@ class ExerciseEvaluator:
                     self.reps_completed += 1
                 self._phase = "TWO_FEET"
                 self._feedback = ""
+                
+        # Posture check: Leaning to balance
+        if not self._check_shoulder_level(lm):
+            self._log_error("torso_lean", "Keep shoulders level, don't lean to balance")
 
     def _eval_high_knees(self, lm, frame):
         self._eval_knee_extension(lm, frame)   # reuse basic knee-height logic
 
     def _eval_cat_cow(self, lm, frame):
-        if not check_visibility(lm, [7,11,23], 0.6): return
+        if not check_visibility(lm, [7,11,23, 15, 27], 0.6): return
         ear = lm_xy(lm, 7); sh = lm_xy(lm, 11); hp = lm_xy(lm, 23)
         angle = calculate_angle(ear, sh, hp)
 
@@ -249,10 +334,17 @@ class ExerciseEvaluator:
             self._phase = "NEUTRAL"
             self.reps_completed += 1
             self._feedback = ""
+            
+        # Posture check: Alignment of arms and legs
+        wr = lm_xy(lm, 15); an = lm_xy(lm, 27)
+        if abs(wr[0] - sh[0]) > 0.15:
+            self._log_error("hands_too_far", "Keep your hands directly under your shoulders")
+        if abs(an[0] - hp[0]) > 0.2:
+            self._log_error("knees_too_far", "Keep your knees directly under your hips")
 
     def _eval_lunge(self, lm, frame):
         idx = self.idxs
-        if not check_visibility(lm, [idx["hp"], idx["kn"], idx["an"]], 0.6): return
+        if not check_visibility(lm, [idx["hp"], idx["kn"], idx["an"], idx["sh"]], 0.6): return
         hp = lm_xy(lm, idx["hp"]); kn = lm_xy(lm, idx["kn"]); an = lm_xy(lm, idx["an"])
         angle = calculate_angle(hp, kn, an)
 
@@ -263,8 +355,12 @@ class ExerciseEvaluator:
             self.reps_completed += 1
             self._feedback = ""
 
-        if kn[0] > an[0] + 0.05:
+        if kn[0] > an[0] + 0.1: # Threshold adjusted to be slightly more forgiving but strict enough
             self._log_error("knee_over_toe", "Keep knee behind toes")
+            
+        # Posture check: Torso leaning forward
+        if not self._check_torso_alignment(lm, idx["sh"], idx["hp"], idx["kn"]):
+            self._log_error("torso_lean", "Keep your upper body completely straight")
 
     def _eval_bird_dog(self, lm, frame):
         idx = self.idxs
@@ -278,10 +374,15 @@ class ExerciseEvaluator:
             self._phase = "NEUTRAL"
             self.reps_completed += 1
             self._feedback = ""
+            
+        # Posture check: Spinal arching
+        # Check the angle of the back (shoulder-hip) relative to horizontal.
+        if abs(sh[1] - hp[1]) > 0.15: # If hips are way higher or lower than shoulders
+            self._log_error("spine_not_neutral", "Keep your back flat like a table")
 
     def _eval_seated_forward_bend(self, lm, frame):
         idx = self.idxs
-        if not check_visibility(lm, [idx["sh"], idx["hp"], idx["kn"]], 0.6): return
+        if not check_visibility(lm, [idx["sh"], idx["hp"], idx["kn"], idx["an"]], 0.6): return
         sh = lm_xy(lm, idx["sh"]); hp = lm_xy(lm, idx["hp"]); kn = lm_xy(lm, idx["kn"])
         angle = calculate_angle(sh, hp, kn)
 
@@ -294,6 +395,12 @@ class ExerciseEvaluator:
             self._phase = "UPRIGHT"
             self.reps_completed += 1
             self._feedback = ""
+            
+        # Posture check: Knees bending to cheat the stretch
+        an = lm_xy(lm, idx["an"])
+        leg_angle = calculate_angle(hp, kn, an)
+        if self._phase == "HOLDING" and leg_angle < 165:
+            self._log_error("knees_bending", "Keep your legs completely straight")
 
     def _eval_neck_lateral_flexion(self, lm, frame):
         idx = self.idxs
@@ -315,7 +422,7 @@ class ExerciseEvaluator:
 
     def _eval_hip_abduction(self, lm, frame):
         idx = self.idxs
-        if not check_visibility(lm, [idx["hp"], idx["kn"], idx["an"]], 0.6): return
+        if not check_visibility(lm, [idx["hp"], idx["kn"], idx["an"], idx["sh"]], 0.6): return
         hp = lm_xy(lm, idx["hp"]); kn = lm_xy(lm, idx["kn"]); an = lm_xy(lm, idx["an"])
         angle = calculate_angle(hp, kn, an)
 
@@ -325,5 +432,9 @@ class ExerciseEvaluator:
             self._phase = "STANDING"
             self.reps_completed += 1
             self._feedback = ""
+
+        # Posture Check: Torso leaning to cheat the abduction
+        if not self._check_torso_alignment(lm, idx["sh"], idx["hp"], idx["kn"]):
+            self._log_error("torso_lean", "Keep your body straight, don't lean your torso away")
 
 
