@@ -38,10 +38,30 @@ selected_id    = st.selectbox("Choose an exercise", list(exercise_names.keys()),
                                format_func=lambda x: exercise_names[x])
 selected_plan  = next(p for p in plans if p.exercise_id == selected_id)
 
+# ── Load instructions ────────────────────────────────────────────────────────
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+with open(os.path.join(root_dir, "frontend", "exercises.json")) as f:
+    exercises_db = json.load(f)
+selected_exercise_info = next((e for e in exercises_db if e["id"] == selected_id), {})
+instructions = selected_exercise_info.get("instructions", [])
+
 if selected_plan.caution:
     st.warning(f"⚠️ Caution: {selected_plan.caution}")
 
-# ── WebRTC video processor ───────────────────────────────────────────────────
+col_vid, col_inst = st.columns([2, 1])
+
+with col_inst:
+    st.subheader("📝 Instructions")
+    if instructions:
+        for i, step in enumerate(instructions, 1):
+            st.markdown(f"**{i}.** {step}")
+    else:
+        st.info("No instructions available.")
+    if selected_plan.side != "both":
+        st.info(f"👉 **Side:** Perform on your **{selected_plan.side}** side.")
+
+with col_vid:
+    # ── WebRTC video processor ───────────────────────────────────────────────────
 class PoseProcessor(VideoProcessorBase):
     def __init__(self):
         self.evaluator = ExerciseEvaluator(selected_plan)

@@ -51,6 +51,7 @@ IMPORTANT SAFETY RULES
 - Confidence must reflect how appropriate the exercise is for this patient's
   specific complaint (1.0 = perfect fit, 0.0 = contraindicated).
 - Exercises with confidence < 0.6 will be automatically discarded by the backend.
+- LATERALLY SPECIFIC INSTRUCTIONS: If the patient mentions a specific side (e.g., 'right knee', 'left shoulder'), and the exercise is marked as 'is_unilateral': true, you MUST specify the "side" as "left" or "right". If the exercise is bilateral (is_unilateral: false) or if you want them to do both sides for balance, use "both".
 
 OUTPUT FORMAT
 Return a single JSON object exactly matching this schema, no markdown, no extra keys:
@@ -64,6 +65,7 @@ Return a single JSON object exactly matching this schema, no markdown, no extra 
       "confidence": 0.85,
       "sets": 3,
       "reps": 10,
+      "side": "right", 
       "caution": "<specific note or empty string>",
       "priority": 1
     }
@@ -74,7 +76,7 @@ Return a single JSON object exactly matching this schema, no markdown, no extra 
 
 def _build_user_prompt(complaint: str, pain_level: int, exercises_catalogue: list) -> str:
     catalogue_str = json.dumps(
-        [{"id": e["id"], "name": e["name"], "description": e["description"]}
+        [{"id": e["id"], "name": e["name"], "description": e["description"], "is_unilateral": e.get("is_unilateral", False)}
          for e in exercises_catalogue],
         indent=2,
     )

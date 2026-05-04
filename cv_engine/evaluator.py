@@ -21,7 +21,17 @@ class ExerciseEvaluator:
         self.exercise_id  = exercise_plan_row.exercise_id
         self.target_reps  = exercise_plan_row.target_reps
         self.target_sets  = exercise_plan_row.target_sets
+        self.side         = exercise_plan_row.side or "both"
         self.caution      = exercise_plan_row.caution or ""
+
+        # Mapping for side-specific landmarks
+        # Left: 11, 13, 15, 23, 25, 27 | Right: 12, 14, 16, 24, 26, 28
+        self.lm_map = {
+            "left":  {"sh": 11, "el": 13, "wr": 15, "hp": 23, "kn": 25, "an": 27},
+            "right": {"sh": 12, "el": 14, "wr": 16, "hp": 24, "kn": 26, "an": 28},
+            "both":  {"sh": 11, "el": 13, "wr": 15, "hp": 23, "kn": 25, "an": 27} # default to left if both (e.g. for squats)
+        }
+        self.idxs = self.lm_map.get(self.side.lower(), self.lm_map["both"])
 
         self.reps_completed   = 0
         self.sets_completed   = 0
@@ -73,7 +83,7 @@ class ExerciseEvaluator:
         cv2.rectangle(frame, (0, 0), (w, 60), (0, 0, 0), -1)
         cv2.putText(frame, f"Reps: {self.reps_completed}/{self.target_reps * self.target_sets}",
                     (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
-        cv2.putText(frame, f"Phase: {self._phase}",
+        cv2.putText(frame, f"Phase: {self._phase} | Side: {self.side.title()}",
                     (10, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,200), 1)
         if self._feedback:
             cv2.putText(frame, self._feedback,
@@ -88,8 +98,12 @@ class ExerciseEvaluator:
     # Each method follows the state-machine spec in the PRD.
 
     def _eval_squat(self, lm, frame):
-        if not check_visibility(lm, [23,25,27], 0.6): return
-        hip   = lm_xy(lm, 23); knee = lm_xy(lm, 25); ankle = lm_xy(lm, 27)
+        # Bilateral check: uses hip width, so we need both
+        if not check_visibility(lm, [23,24,25,26,27,28], 0.6): return
+        
+        # Track the side specified (or left by default)
+        idx = self.idxs
+        hip = lm_xy(lm, idx["hp"]); knee = lm_xy(lm, idx["kn"]); ankle = lm_xy(lm, idx["an"])
         angle = calculate_angle(hip, knee, ankle)
 
         if self._phase in ("INIT","STANDING") and angle < 100:
@@ -106,8 +120,9 @@ class ExerciseEvaluator:
             self._log_error("knee_cave", "Push knees outward")
 
     def _eval_shoulder_flexion(self, lm, frame):
-        if not check_visibility(lm, [11,13,15,23], 0.6): return
-        hip   = lm_xy(lm, 23); sh = lm_xy(lm, 11); el = lm_xy(lm, 13)
+        idx = self.idxs
+        if not check_visibility(lm, [idx["hp"], idx["sh"], idx["el"]], 0.6): return
+        hip   = lm_xy(lm, idx["hp"]); sh = lm_xy(lm, idx["sh"]); el = lm_xy(lm, idx["el"])
         angle = calculate_angle(hip, sh, el)
 
         if self._phase in ("INIT","RESTING") and angle > 30:
@@ -142,8 +157,9 @@ class ExerciseEvaluator:
             self._log_error("arms_not_reaching", "Raise arms above shoulders")
 
     def _eval_knee_extension(self, lm, frame):
-        if not check_visibility(lm, [23,25,27], 0.6): return
-        hip   = lm_xy(lm, 23); knee = lm_xy(lm, 25); ankle = lm_xy(lm, 27)
+        idx = self.idxs
+        if not check_visibility(lm, [idx["hp"], idx["kn"], idx["an"]], 0.6): return
+        hip   = lm_xy(lm, idx["hp"]); knee = lm_xy(lm, idx["kn"]); ankle = lm_xy(lm, idx["an"])
         angle = calculate_angle(hip, knee, ankle)
 
         if self._phase in ("INIT","BENT") and angle > 160:
@@ -157,8 +173,9 @@ class ExerciseEvaluator:
             self._log_error("hyperextension", "Don't lock your knee")
 
     def _eval_bicep_curl(self, lm, frame):
-        if not check_visibility(lm, [11,13,15], 0.6): return
-        sh = lm_xy(lm, 11); el = lm_xy(lm, 13); wr = lm_xy(lm, 15)
+        idx = self.idxs
+        if not check_visibility(lm, [idx["sh"], idx["el"], idx["wr"]], 0.6): return
+        sh = lm_xy(lm, idx["sh"]); el = lm_xy(lm, idx["el"]); wr = lm_xy(lm, idx["wr"])
         angle = calculate_angle(sh, el, wr)
 
         if self._phase in ("INIT","EXTENDED") and angle < 50:
@@ -168,13 +185,14 @@ class ExerciseEvaluator:
             self.reps_completed += 1
             self._feedback = ""
 
-        hp = lm_xy(lm, 23)
+        hp = lm_xy(lm, idx["hp"])
         if abs(el[0] - hp[0]) > 0.05:
             self._log_error("elbow_drift", "Keep elbows tucked")
 
     def _eval_shoulder_abduction(self, lm, frame):
-        if not check_visibility(lm, [23,11,13], 0.6): return
-        hp = lm_xy(lm, 23); sh = lm_xy(lm, 11); el = lm_xy(lm, 13)
+        idx = self.idxs
+        if not check_visibility(lm, [idx["hp"], idx["sh"], idx["el"]], 0.6): return
+        hp = lm_xy(lm, idx["hp"]); sh = lm_xy(lm, idx["sh"]); el = lm_xy(lm, idx["el"])
         angle = calculate_angle(hp, sh, el)
 
         if self._phase in ("INIT","RESTING") and angle > 85:
@@ -185,8 +203,9 @@ class ExerciseEvaluator:
             self._feedback = ""
 
     def _eval_wall_pushup(self, lm, frame):
-        if not check_visibility(lm, [11,13,15], 0.6): return
-        sh = lm_xy(lm, 11); el = lm_xy(lm, 13); wr = lm_xy(lm, 15)
+        idx = self.idxs
+        if not check_visibility(lm, [idx["sh"], idx["el"], idx["wr"]], 0.6): return
+        sh = lm_xy(lm, idx["sh"]); el = lm_xy(lm, idx["el"]); wr = lm_xy(lm, idx["wr"])
         angle = calculate_angle(sh, el, wr)
 
         if self._phase in ("INIT","EXTENDED") and angle < 90:
@@ -197,17 +216,17 @@ class ExerciseEvaluator:
             self._feedback = ""
 
     def _eval_single_leg_stand(self, lm, frame):
-        if not check_visibility(lm, [23,25,27], 0.6): return
-        # Lifted knee: knee_y < hip_y  (y is inverted in image space)
-        lk_y = lm[25].y; lh_y = lm[23].y
-        rk_y = lm[26].y; rh_y = lm[24].y
+        idx = self.idxs
+        if not check_visibility(lm, [idx["hp"], idx["kn"], idx["an"]], 0.6): return
+        # Lifted knee: knee_y < hip_y
+        k_y = lm[idx["kn"]].y; h_y = lm[idx["hp"]].y
 
         if self._phase in ("INIT","TWO_FEET"):
-            if lk_y < lh_y or rk_y < rh_y:
+            if k_y < h_y:
                 self._phase    = "ONE_FOOT_LIFTED"
                 self._hold_start = time.time()
         elif self._phase == "ONE_FOOT_LIFTED":
-            if not (lk_y < lh_y or rk_y < rh_y):
+            if not (k_y < h_y):
                 hold = time.time() - self._hold_start
                 if hold >= 2.0:
                     self.reps_completed += 1
@@ -232,8 +251,9 @@ class ExerciseEvaluator:
             self._feedback = ""
 
     def _eval_lunge(self, lm, frame):
-        if not check_visibility(lm, [23,25,27], 0.6): return
-        hp = lm_xy(lm, 23); kn = lm_xy(lm, 25); an = lm_xy(lm, 27)
+        idx = self.idxs
+        if not check_visibility(lm, [idx["hp"], idx["kn"], idx["an"]], 0.6): return
+        hp = lm_xy(lm, idx["hp"]); kn = lm_xy(lm, idx["kn"]); an = lm_xy(lm, idx["an"])
         angle = calculate_angle(hp, kn, an)
 
         if self._phase in ("INIT","STANDING") and angle < 95:
@@ -247,9 +267,9 @@ class ExerciseEvaluator:
             self._log_error("knee_over_toe", "Keep knee behind toes")
 
     def _eval_bird_dog(self, lm, frame):
-        if not check_visibility(lm, [11,23,25,15,27], 0.6): return
-        # Simplified: check opposite arm/leg extension via shoulder-hip-knee angle
-        hp = lm_xy(lm, 23); sh = lm_xy(lm, 11); kn = lm_xy(lm, 25)
+        idx = self.idxs
+        if not check_visibility(lm, [idx["sh"], idx["hp"], idx["kn"]], 0.6): return
+        hp = lm_xy(lm, idx["hp"]); sh = lm_xy(lm, idx["sh"]); kn = lm_xy(lm, idx["kn"])
         angle = calculate_angle(sh, hp, kn)
 
         if self._phase in ("INIT","NEUTRAL") and angle > 170:
@@ -260,8 +280,9 @@ class ExerciseEvaluator:
             self._feedback = ""
 
     def _eval_seated_forward_bend(self, lm, frame):
-        if not check_visibility(lm, [11,23,25], 0.6): return
-        sh = lm_xy(lm, 11); hp = lm_xy(lm, 23); kn = lm_xy(lm, 25)
+        idx = self.idxs
+        if not check_visibility(lm, [idx["sh"], idx["hp"], idx["kn"]], 0.6): return
+        sh = lm_xy(lm, idx["sh"]); hp = lm_xy(lm, idx["hp"]); kn = lm_xy(lm, idx["kn"])
         angle = calculate_angle(sh, hp, kn)
 
         if self._phase in ("INIT","UPRIGHT") and angle > 140:
@@ -275,8 +296,9 @@ class ExerciseEvaluator:
             self._feedback = ""
 
     def _eval_neck_lateral_flexion(self, lm, frame):
-        if not check_visibility(lm, [7,11], 0.6): return
-        ear = lm_xy(lm, 7); sh = lm_xy(lm, 11)
+        idx = self.idxs
+        if not check_visibility(lm, [idx["sh"]], 0.6): return # ear (7/8) visibility is low usually
+        ear = lm_xy(lm, 7 if self.side == "left" else 8); sh = lm_xy(lm, idx["sh"])
         # Tilt: horizontal ratio of ear relative to shoulder
         dx = abs(ear[0] - sh[0]); dy = abs(ear[1] - sh[1])
         angle = math.degrees(math.atan2(dx, dy)) if dy > 0 else 0
@@ -292,8 +314,9 @@ class ExerciseEvaluator:
             self._log_error("shoulder_rise", "Keep shoulder down")
 
     def _eval_hip_abduction(self, lm, frame):
-        if not check_visibility(lm, [23,25,27], 0.6): return
-        hp = lm_xy(lm, 23); kn = lm_xy(lm, 25); an = lm_xy(lm, 27)
+        idx = self.idxs
+        if not check_visibility(lm, [idx["hp"], idx["kn"], idx["an"]], 0.6): return
+        hp = lm_xy(lm, idx["hp"]); kn = lm_xy(lm, idx["kn"]); an = lm_xy(lm, idx["an"])
         angle = calculate_angle(hp, kn, an)
 
         if self._phase in ("INIT","STANDING") and angle > 30:

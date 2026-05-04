@@ -70,6 +70,7 @@ if username:
                     confidence    = item["confidence"],
                     target_sets   = item["sets"],
                     target_reps   = item["reps"],
+                    side          = item.get("side", "both"),
                     caution       = item.get("caution", ""),
                     priority      = item.get("priority", 99),
                 ))

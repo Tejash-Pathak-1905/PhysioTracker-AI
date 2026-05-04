@@ -55,6 +55,7 @@ class ExercisePlan(Base):
     confidence   = Column(Float,   nullable=False)
     target_sets  = Column(Integer, nullable=False)
     target_reps  = Column(Integer, nullable=False)
+    side         = Column(String,  default="both") # "left", "right", or "both"
     caution      = Column(String)
     priority     = Column(Integer, default=99)
 
