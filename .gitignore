@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.db
+.env
+.streamlit/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+test_*.py
+implementation_plan.md
+Untitled-1.md

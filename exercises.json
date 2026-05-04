@@ -1,0 +1,138 @@
+[
+  {
+    "id": "squat",
+    "name": "Squat",
+    "description": "A lower-body compound exercise targeting quads, glutes, and hamstrings.",
+    "camera": "side",
+    "default_sets": 3,
+    "default_reps": 10,
+    "type": "rep_based"
+  },
+  {
+    "id": "shoulder_flexion",
+    "name": "Shoulder Flexion (Front Raise)",
+    "description": "Anterior deltoid rehabilitation exercise.",
+    "camera": "side",
+    "default_sets": 3,
+    "default_reps": 10,
+    "type": "rep_based"
+  },
+  {
+    "id": "jumping_jacks",
+    "name": "Jumping Jacks",
+    "description": "Full-body cardiovascular warm-up exercise.",
+    "camera": "front",
+    "default_sets": 1,
+    "default_reps": 20,
+    "type": "rep_based"
+  },
+  {
+    "id": "knee_extension",
+    "name": "Knee Extension (Standing)",
+    "description": "Quadriceps strengthening for post-surgery rehabilitation.",
+    "camera": "side",
+    "default_sets": 3,
+    "default_reps": 12,
+    "type": "rep_based"
+  },
+  {
+    "id": "bicep_curl",
+    "name": "Bicep Curl",
+    "description": "Elbow flexor strengthening exercise.",
+    "camera": "side",
+    "default_sets": 3,
+    "default_reps": 12,
+    "type": "rep_based"
+  },
+  {
+    "id": "shoulder_abduction",
+    "name": "Shoulder Abduction (Side Raise)",
+    "description": "Lateral deltoid and rotator-cuff rehab exercise.",
+    "camera": "front",
+    "default_sets": 3,
+    "default_reps": 10,
+    "type": "rep_based"
+  },
+  {
+    "id": "wall_pushup",
+    "name": "Wall Push-Up",
+    "description": "Modified push-up for upper-body strengthening; low impact.",
+    "camera": "side",
+    "default_sets": 3,
+    "default_reps": 10,
+    "type": "rep_based"
+  },
+  {
+    "id": "single_leg_stand",
+    "name": "Single Leg Stand",
+    "description": "Proprioception and balance training.",
+    "camera": "front",
+    "default_sets": 2,
+    "default_reps": 30,
+    "type": "time_based",
+    "hold_seconds": 30
+  },
+  {
+    "id": "high_knees",
+    "name": "High Knees / Standing March",
+    "description": "Dynamic hip flexor and cardiovascular exercise.",
+    "camera": "front",
+    "default_sets": 1,
+    "default_reps": 20,
+    "type": "rep_based"
+  },
+  {
+    "id": "cat_cow",
+    "name": "Cat-Cow Stretch",
+    "description": "Spinal mobility exercise for lower back pain.",
+    "camera": "side",
+    "default_sets": 2,
+    "default_reps": 10,
+    "type": "rep_based"
+  },
+  {
+    "id": "lunge",
+    "name": "Lunge (Static)",
+    "description": "Lower-body unilateral strength and balance exercise.",
+    "camera": "side",
+    "default_sets": 3,
+    "default_reps": 10,
+    "type": "rep_based"
+  },
+  {
+    "id": "bird_dog",
+    "name": "Bird Dog",
+    "description": "Core stability and spinal control exercise.",
+    "camera": "side",
+    "default_sets": 3,
+    "default_reps": 10,
+    "type": "rep_based"
+  },
+  {
+    "id": "seated_forward_bend",
+    "name": "Seated Forward Bend",
+    "description": "Hamstring and lumbar flexibility stretch.",
+    "camera": "side",
+    "default_sets": 2,
+    "default_reps": 8,
+    "type": "rep_based"
+  },
+  {
+    "id": "neck_lateral_flexion",
+    "name": "Neck Lateral Flexion",
+    "description": "Cervical lateral flexor mobility exercise.",
+    "camera": "front",
+    "default_sets": 2,
+    "default_reps": 10,
+    "type": "rep_based"
+  },
+  {
+    "id": "hip_abduction",
+    "name": "Hip Abduction (Standing)",
+    "description": "Gluteus medius strengthening exercise.",
+    "camera": "front",
+    "default_sets": 3,
+    "default_reps": 12,
+    "type": "rep_based"
+  }
+]
