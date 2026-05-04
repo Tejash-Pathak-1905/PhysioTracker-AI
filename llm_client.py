@@ -22,7 +22,8 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-load_dotenv()  # reads .env into os.environ
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(BASE_DIR, ".env"))  # reads .env into os.environ
 
 logger = logging.getLogger(__name__)
 

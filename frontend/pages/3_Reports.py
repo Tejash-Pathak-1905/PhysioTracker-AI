@@ -44,9 +44,18 @@ for log in logs:
     # Score = 100 * exp(-k * error_ratio), where k=0.5
     form_score = 100 * np.exp(-0.5 * error_ratio)
     
+    # Try to find side from plan
+    side = "both"
+    for p in plans:
+        if p.exercise_id == log.exercise_id:
+            side = p.side
+            break
+            
     rows.append({
         "date": log.date, 
+        "date_only": log.date.date(),
         "exercise": log.exercise_id,
+        "side": side,
         "reps": log.reps_completed, 
         "duration": log.duration_seconds,
         "total_errors": total_errors,
@@ -67,12 +76,19 @@ kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
 avg_adherence = df["adherence"].mean()
 avg_form_score = df["form_score"].mean()
-total_reps = df["reps"].sum()
+
+# Calculate Consistency Score (100 - CV of adherence)
+if len(df) > 1:
+    cv_adherence = (df["adherence"].std() / df["adherence"].mean()) * 100 if df["adherence"].mean() > 0 else 0
+    consistency = max(0, 100 - cv_adherence)
+else:
+    consistency = 100.0
+
 total_time = df["duration"].sum() // 60
 
 kpi1.metric("Overall Plan Adherence", f"{avg_adherence:.1f}%", delta=f"{avg_adherence - 75:.1f}% vs Goal" if avg_adherence != 75 else None)
 kpi2.metric("Average Form Score", f"{avg_form_score:.1f} / 100", help="Calculated using exponential decay penalty on errors per rep.")
-kpi3.metric("Total Reps Completed", f"{total_reps}")
+kpi3.metric("Consistency Score", f"{consistency:.1f} / 100", help="Mathematical stability of your adherence over time (Low variance = High consistency).")
 kpi4.metric("Total Time Exercising", f"{total_time} mins")
 
 st.markdown("---")
@@ -127,9 +143,34 @@ with col_bar:
     else:
         st.info("Bar chart unavailable due to zero errors.")
 
+st.markdown("---")
+
+col_heat, col_side = st.columns(2)
+
+with col_heat:
+    st.subheader("📅 Workout Frequency Heatmap")
+    daily_reps = df.groupby("date_only")["reps"].sum().reset_index()
+    fig_heat = px.density_heatmap(daily_reps, x="date_only", y="reps", 
+                                  title="Daily Rep Volume Density",
+                                  color_continuous_scale="Viridis", template="plotly_dark")
+    fig_heat.update_layout(margin=dict(l=20, r=20, t=40, b=20))
+    st.plotly_chart(fig_heat, use_container_width=True)
+
+with col_side:
+    st.subheader("⚖️ Left vs Right Limb Comparison")
+    side_df = df[df["side"].isin(["left", "right"])]
+    if not side_df.empty:
+        fig_side = px.box(side_df, x="side", y="form_score", color="side",
+                          title="Form Score Distribution by Limb", template="plotly_dark",
+                          points="all")
+        fig_side.update_layout(margin=dict(l=20, r=20, t=40, b=20))
+        st.plotly_chart(fig_side, use_container_width=True)
+    else:
+        st.info("No unilateral (left/right specific) exercises logged yet.")
+
 # ── Detailed Raw Logs ─────────────────────────────────────────────────────────
 with st.expander("🔍 View Raw Session Mathematics (Tabular)"):
-    display_cols = ["date", "exercise", "reps", "target", "adherence", "total_errors", "form_score", "duration"]
+    display_cols = ["date", "exercise", "side", "reps", "target", "adherence", "total_errors", "form_score", "duration"]
     st.dataframe(df[display_cols].sort_values("date", ascending=False).style.format({
         "adherence": "{:.1f}%",
         "form_score": "{:.1f}",

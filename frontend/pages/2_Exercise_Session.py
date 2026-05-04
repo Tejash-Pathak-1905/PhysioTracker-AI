@@ -60,8 +60,7 @@ with col_inst:
     if selected_plan.side != "both":
         st.info(f"👉 **Side:** Perform on your **{selected_plan.side}** side.")
 
-with col_vid:
-    # ── WebRTC video processor ───────────────────────────────────────────────────
+# ── WebRTC video processor ───────────────────────────────────────────────────
 class PoseProcessor(VideoProcessorBase):
     def __init__(self):
         self.evaluator = ExerciseEvaluator(selected_plan)
@@ -71,13 +70,14 @@ class PoseProcessor(VideoProcessorBase):
         out = self.evaluator.process_frame(bgr)
         return av.VideoFrame.from_ndarray(out, format="bgr24")
 
-ctx = webrtc_streamer(
-    key=f"session_{selected_id}",
-    video_processor_factory=PoseProcessor,
-    rtc_configuration=RTC_CONFIG,
-    media_stream_constraints={"video": True, "audio": False},
-    async_processing=True,
-)
+with col_vid:
+    ctx = webrtc_streamer(
+        key=f"session_{selected_id}",
+        video_processor_factory=PoseProcessor,
+        rtc_configuration=RTC_CONFIG,
+        media_stream_constraints={"video": True, "audio": False},
+        async_processing=True,
+    )
 
 # ── Early-end / save button ──────────────────────────────────────────────────
 col1, col2 = st.columns(2)
