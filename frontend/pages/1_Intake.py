@@ -1,7 +1,12 @@
 """
 pages/1_Intake.py  –  User login + assessment form → LLM plan generation.
 """
-import json, streamlit as st
+import json, os, sys, streamlit as st
+
+# Add root directory to sys.path for backend imports
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(root_dir)
+
 from database import SessionLocal, init_db, User, Assessment, ExercisePlan
 from llm_client import generate_exercise_plan
 
@@ -11,7 +16,8 @@ st.set_page_config(page_title="Intake | PhysioTracker", page_icon="🩺")
 st.title("🩺 Patient Intake & Plan Generation")
 
 # ── Load exercise catalogue ──────────────────────────────────────────────────
-with open("exercises.json") as f:
+exercises_path = os.path.join(root_dir, "frontend", "exercises.json")
+with open(exercises_path) as f:
     EXERCISES = json.load(f)
 
 # ── User login / creation ────────────────────────────────────────────────────

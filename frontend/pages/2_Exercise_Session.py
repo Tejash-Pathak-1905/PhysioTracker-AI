@@ -1,7 +1,12 @@
 """
 pages/2_Exercise_Session.py  –  Live CV session with streamlit-webrtc.
 """
-import json, av, streamlit as st
+import json, av, os, sys, streamlit as st
+
+# Add root directory to sys.path for backend imports
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(root_dir)
+
 from dotenv import load_dotenv
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
 from database import SessionLocal, init_db, ExercisePlan, SessionLog

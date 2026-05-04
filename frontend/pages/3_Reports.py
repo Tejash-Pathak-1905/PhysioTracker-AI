@@ -1,7 +1,12 @@
 """
 pages/3_Reports.py  –  Historical progress dashboard.
 """
-import json, streamlit as st, pandas as pd, plotly.express as px
+import json, os, sys, streamlit as st, pandas as pd, plotly.express as px
+
+# Add root directory to sys.path for backend imports
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(root_dir)
+
 from database import SessionLocal, init_db, SessionLog, ExercisePlan
 
 init_db()
