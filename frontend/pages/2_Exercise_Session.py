@@ -17,6 +17,10 @@ RTC_CONFIG = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:
 
 init_db()
 st.set_page_config(page_title="Session | PhysioTracker", page_icon="🏃")
+
+from frontend.theme import apply_theme
+apply_theme()
+
 st.title("🏃 Exercise Session")
 
 if "user_id" not in st.session_state:

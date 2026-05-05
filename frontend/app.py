@@ -8,6 +8,7 @@ import streamlit as st
 # Add parent directory to sys.path for backend imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database import init_db
+from frontend.theme import apply_theme
 
 init_db()   # ensure tables exist on first launch
 
@@ -15,24 +16,11 @@ st.set_page_config(
     page_title="PhysioTracker AI",
     page_icon="💪",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
-st.title("💪 AI-Assisted Physiotherapy & CV Tracker")
-st.markdown("""
-Welcome to **PhysioTracker** — your AI-powered physiotherapy companion.
+apply_theme()
 
-### How it works
-| Step | Page | What happens |
-|------|------|--------------|
-| 1️⃣ | **Intake** | Enter your name, describe your injury, rate your pain. Gemini AI generates a personalised exercise plan. |
-| 2️⃣ | **Exercise Session** | Your webcam streams to a MediaPipe CV engine that counts reps and logs form errors in real time. |
-| 3️⃣ | **Reports** | View adherence, progression charts, and your most common form mistakes over time. |
+# Redirect immediately to the intake page
+st.switch_page("pages/1_Intake.py")
 
-Use the **sidebar** to navigate between pages.
-""")
-
-if "user_name" in st.session_state:
-    st.info(f"Currently logged in as **{st.session_state['user_name']}**")
-else:
-    st.warning("👈 Start by heading to the **Intake** page to set up your profile.")

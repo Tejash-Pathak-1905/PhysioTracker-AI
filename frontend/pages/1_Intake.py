@@ -1,5 +1,6 @@
 """
 pages/1_Intake.py  –  User login + assessment form → LLM plan generation.
+(Hot-reload trigger applied)
 """
 import json, os, sys, streamlit as st
 
@@ -13,6 +14,10 @@ from llm_client import generate_exercise_plan
 init_db()
 
 st.set_page_config(page_title="Intake | PhysioTracker", page_icon="🩺")
+
+from frontend.theme import apply_theme
+apply_theme()
+
 st.title("🩺 Patient Intake & Plan Generation")
 
 # ── Load exercise catalogue ──────────────────────────────────────────────────
@@ -44,11 +49,34 @@ if username:
         complaint   = st.text_area("Describe your injury or goal", height=120,
                                    placeholder="e.g. Right knee pain after running. Difficulty going down stairs.")
         pain_level  = st.slider("Current pain level (0 = none, 10 = severe)", 0, 10, 3)
+        past_records = st.text_area("Past Medical Records & Surgeries (Optional)", height=80,
+                                    placeholder="e.g. ACL reconstruction in 2018, history of asthma.")
+        
+        st.markdown("<div style='margin-top: 1rem; margin-bottom: 0.5rem;'><label>Attach Medical Reports / Imaging (Optional)</label></div>", unsafe_allow_html=True)
+        uploaded_file = st.file_uploader(
+            "Attach Medical Reports / Imaging",
+            type=["pdf", "png", "jpg", "jpeg"],
+            label_visibility="collapsed"
+        )
+
         submitted   = st.form_submit_button("🤖 Generate My Plan")
 
     if submitted and complaint.strip():
+        file_bytes = None
+        mime_type = ""
+        if uploaded_file is not None:
+            file_bytes = uploaded_file.getvalue()
+            mime_type = uploaded_file.type
+
         with st.spinner("Generating your personalised programme..."):
-            plan = generate_exercise_plan(complaint, pain_level, EXERCISES)
+            plan = generate_exercise_plan(
+                complaint, 
+                pain_level, 
+                EXERCISES, 
+                past_records=past_records,
+                media_bytes=file_bytes, 
+                media_mime=mime_type
+            )
 
         if plan is None:
             st.error("Could not generate a plan. Check your GEMINI_API_KEY and try again.")

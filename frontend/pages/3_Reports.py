@@ -12,6 +12,10 @@ from database import SessionLocal, init_db, SessionLog, ExercisePlan
 
 init_db()
 st.set_page_config(page_title="Analytics | PhysioTracker", page_icon="📈", layout="wide")
+
+from frontend.theme import apply_theme
+apply_theme()
+
 st.title("📈 Physiotherapy Analytics Dashboard")
 
 if "user_id" not in st.session_state:

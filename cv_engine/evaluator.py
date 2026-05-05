@@ -38,6 +38,7 @@ class ExerciseEvaluator:
         self.form_errors      = {}
         self._phase           = "INIT"
         self._feedback        = ""
+        self._feedback_time   = 0
         self._start_time      = time.time()
 
         self._pose = mp_pose.Pose(
@@ -89,21 +90,82 @@ class ExerciseEvaluator:
     def _log_error(self, key: str, msg: str):
         self.form_errors[key] = self.form_errors.get(key, 0) + 1
         self._feedback = msg
+        self._feedback_time = time.time()
 
     def _check_torso_alignment(self, lm, sh_idx, hp_idx, kn_idx):
         """Checks if the back is relatively straight using Shoulder-Hip-Knee angle."""
-        if not check_visibility(lm, [sh_idx, hp_idx, kn_idx], 0.6): return True
+        if not check_visibility(lm, [sh_idx, hp_idx, kn_idx], 0.7): return True
         sh = lm_xy(lm, sh_idx); hp = lm_xy(lm, hp_idx); kn = lm_xy(lm, kn_idx)
         angle = calculate_angle(sh, hp, kn)
-        # In a standing or seated position, this angle shouldn't drop too low unless leaning is required
-        return angle > 130 
+        # Stricter angle for standing straight
+        return angle > 155 
 
     def _check_shoulder_level(self, lm):
         """Checks if shoulders are parallel to the ground."""
-        if not check_visibility(lm, [11, 12], 0.6): return True
+        if not check_visibility(lm, [11, 12], 0.7): return True
         l_sh = lm_xy(lm, 11); r_sh = lm_xy(lm, 12)
         dy = abs(l_sh[1] - r_sh[1])
-        return dy < 0.05 # small threshold for levelness
+        return dy < 0.035 # stricter threshold for levelness
+
+    def _check_facing_camera(self, lm):
+        """Checks if the user is facing the camera, not turned sideways excessively."""
+        if not check_visibility(lm, [11, 12], 0.7): return True
+        l_sh_z = lm[11].z; r_sh_z = lm[12].z
+        # Difference in z-coordinates of shoulders indicates turning
+        return abs(l_sh_z - r_sh_z) < 0.15
+
+    def _is_standing_straight(self, lm, allow_knee_bend=False):
+        """Strict check to ensure the user is standing upright and stable."""
+        idx = self.idxs
+        # Allow ankles to be less visible (0.4) since they are often cut off, but hips/knees must be visible
+        if not check_visibility(lm, [idx["sh"], idx["hp"], idx["kn"]], 0.65):
+            return False, "Upper body and knees must be visible"
+            
+        sh = lm_xy(lm, idx["sh"]); hp = lm_xy(lm, idx["hp"]); kn = lm_xy(lm, idx["kn"])
+        
+        if not allow_knee_bend:
+            if not (sh[1] < hp[1] < kn[1]):
+                return False, "Must be standing upright"
+        else:
+            if not (sh[1] < hp[1]):
+                return False, "Must remain upright"
+            
+        # Torso must be straight
+        if calculate_angle(sh, hp, kn) < 160:
+            return False, "Stand up straight, torso is bent"
+            
+        # Legs must be straight
+        if not allow_knee_bend and check_visibility(lm, [idx["an"]], 0.5):
+            an = lm_xy(lm, idx["an"])
+            if calculate_angle(hp, kn, an) < 155:
+                return False, "Keep your legs straight"
+            
+        # Check stability (hips moving horizontally too much relative to shoulders)
+        if abs(sh[0] - hp[0]) > 0.15:
+            return False, "Stop moving around, stand still"
+            
+        return True, ""
+
+    def _is_seated(self, lm):
+        """Strict check for seated exercises."""
+        idx = self.idxs
+        if not check_visibility(lm, [idx["sh"], idx["hp"], idx["kn"]], 0.65):
+            return False, "Upper body and knees must be visible"
+            
+        sh = lm_xy(lm, idx["sh"]); hp = lm_xy(lm, idx["hp"]); kn = lm_xy(lm, idx["kn"])
+        
+        if not (sh[1] < hp[1]):
+            return False, "Must be seated upright"
+            
+        angle = calculate_angle(sh, hp, kn)
+        if angle > 130:
+             return False, "You must be seated, not standing"
+             
+        # Torso upright check
+        if abs(sh[0] - hp[0]) > 0.2:
+            return False, "Sit up straight"
+            
+        return True, ""
 
     def _draw_hud(self, frame):
         h, w = frame.shape[:2]
@@ -116,6 +178,10 @@ class ExerciseEvaluator:
                     (15, 50), cv2.FONT_HERSHEY_DUPLEX, 0.6, (0,255,200), 1)
         
         # Interactive Bottom Banner (Live Posture Feedback)
+        # Clear feedback if it's older than 1.5 seconds
+        if self._feedback and (time.time() - self._feedback_time > 1.5):
+            self._feedback = ""
+
         if self._feedback:
             # Red Banner for Error Correction
             cv2.rectangle(frame, (0, h - 50), (w, h), (0, 0, 200), -1)
@@ -128,6 +194,33 @@ class ExerciseEvaluator:
                         (15, h - 18), cv2.FONT_HERSHEY_DUPLEX, 0.65, (255,255,255), 2)
 
     def _dispatch(self, lm, frame):
+        standing_straight_req = ["bicep_curl", "shoulder_flexion", "shoulder_abduction", "hip_abduction"]
+        standing_bend_req = ["squat", "lunge", "jumping_jacks", "single_leg_stand", "high_knees"]
+        seated_req = ["knee_extension", "seated_forward_bend", "neck_lateral_flexion"]
+        
+        # Enforce facing camera for most exercises
+        if self.exercise_id in standing_straight_req + seated_req + ["jumping_jacks", "squat"]:
+            if not self._check_facing_camera(lm):
+                self._log_error("not_facing", "Please face the camera directly")
+                return
+
+        # Enforce strict base postures
+        if self.exercise_id in standing_straight_req:
+            ok, msg = self._is_standing_straight(lm, allow_knee_bend=False)
+            if not ok:
+                self._log_error("bad_base_posture", msg)
+                return
+        elif self.exercise_id in standing_bend_req:
+            ok, msg = self._is_standing_straight(lm, allow_knee_bend=True)
+            if not ok:
+                self._log_error("bad_base_posture", msg)
+                return
+        elif self.exercise_id in seated_req:
+            ok, msg = self._is_seated(lm)
+            if not ok:
+                self._log_error("bad_base_posture", msg)
+                return
+
         fn = getattr(self, f"_eval_{self.exercise_id}", None)
         if fn:
             fn(lm, frame)
@@ -157,18 +250,18 @@ class ExerciseEvaluator:
         la = lm_xy(lm, 27); ra = lm_xy(lm, 28)
         
         # 1. Knee Cave (Valgus)
-        if abs(lk[0]-rk[0]) < abs(lh[0]-rh[0]) * 0.8: # Knees narrower than hips
+        if abs(lk[0]-rk[0]) < abs(lh[0]-rh[0]) * 0.9: # Knees narrower than hips (stricter)
             self._log_error("knee_cave", "Push knees outward")
             
         # 2. Torso leaning too far forward (chest falling)
         sh = lm_xy(lm, idx["sh"])
         torso_angle = calculate_angle(sh, hip, knee)
-        if self._phase == "SQUATTING" and torso_angle < 70:
+        if self._phase == "SQUATTING" and torso_angle < 80: # Stricter
             self._log_error("torso_lean", "Keep your chest up")
             
         # 3. Heels lifting (ankles moving significantly up relative to start)
         # Simplified: check if ankle y is changing drastically (difficult without depth, so we use knee over toe)
-        if knee[0] > ankle[0] + 0.15: # Knee tracking way past toes
+        if knee[0] > ankle[0] + 0.1: # Stricter
             self._log_error("knee_over_toe", "Shift weight to your heels")
 
     def _eval_shoulder_flexion(self, lm, frame):
@@ -185,11 +278,11 @@ class ExerciseEvaluator:
             self._feedback = ""
 
         wr = lm_xy(lm, idx["wr"])
-        if calculate_angle(sh, el, wr) < 140:
+        if calculate_angle(sh, el, wr) < 155:
             self._log_error("elbow_bend", "Keep your arm straight")
             
         # Posture check: Torso leaning back to cheat the weight up
-        if not self._check_torso_alignment(lm, idx["sh"], idx["hp"], idx["kn"]):
+        if calculate_angle(sh, hip, lm_xy(lm, idx["kn"])) < 165:
             self._log_error("torso_lean", "Keep your back straight, don't lean back")
 
     def _eval_jumping_jacks(self, lm, frame):
@@ -199,8 +292,8 @@ class ExerciseEvaluator:
         an_l = lm_xy(lm, 27); an_r = lm_xy(lm, 28)
         hp_l = lm_xy(lm, 23); hp_r = lm_xy(lm, 24)
 
-        arms_up  = wr_l[1] < sh_l[1] and wr_r[1] < sh_r[1]
-        legs_out = abs(an_l[0]-an_r[0]) > abs(hp_l[0]-hp_r[0]) * 1.3
+        arms_up  = wr_l[1] < sh_l[1] - 0.15 and wr_r[1] < sh_r[1] - 0.15 # Stricter
+        legs_out = abs(an_l[0]-an_r[0]) > abs(hp_l[0]-hp_r[0]) * 1.5 # Stricter
 
         if self._phase in ("INIT","CLOSED") and arms_up and legs_out:
             self._phase = "OPEN"
@@ -231,7 +324,7 @@ class ExerciseEvaluator:
         # Check if thigh is raising (cheating by using hip flexors instead of quads)
         sh = lm_xy(lm, idx["sh"])
         hip_angle = calculate_angle(sh, hip, knee)
-        if self._phase == "FULL" and hip_angle < 130: # If sitting, angle is ~90. If it drops to 70, thigh raised.
+        if self._phase == "FULL" and hip_angle < 80: # Stricter. Seated is ~90, <80 means thigh lifted.
              self._log_error("thigh_lift", "Keep your thigh still on the chair/bed")
 
     def _eval_bicep_curl(self, lm, frame):
@@ -252,11 +345,11 @@ class ExerciseEvaluator:
         
         # 1. Elbow drift (cheating by using front deltoids)
         # Check if elbow moves significantly forward compared to shoulder/hip
-        if el[0] < sh[0] - 0.1: # Elbow drifted forward too much
+        if el[0] < sh[0] - 0.05 or el[0] > sh[0] + 0.05: # Elbow drifted too much
             self._log_error("elbow_drift", "Keep your elbows tucked to your sides")
             
         # 2. Torso swinging (cheating by using momentum)
-        if not self._check_torso_alignment(lm, idx["sh"], idx["hp"], idx["kn"]):
+        if calculate_angle(sh, hp, lm_xy(lm, idx["kn"])) < 165:
             self._log_error("torso_swing", "Keep your back straight, do not swing")
 
     def _eval_shoulder_abduction(self, lm, frame):
@@ -293,7 +386,7 @@ class ExerciseEvaluator:
         # Posture check: Body must be in a straight line
         hp = lm_xy(lm, idx["hp"]); an = lm_xy(lm, idx["an"])
         body_angle = calculate_angle(sh, hp, an)
-        if body_angle < 160:
+        if body_angle < 170: # Stricter
             self._log_error("hips_sagging", "Keep your body in a straight line from head to heels")
 
     def _eval_single_leg_stand(self, lm, frame):
@@ -337,9 +430,9 @@ class ExerciseEvaluator:
             
         # Posture check: Alignment of arms and legs
         wr = lm_xy(lm, 15); an = lm_xy(lm, 27)
-        if abs(wr[0] - sh[0]) > 0.15:
+        if abs(wr[0] - sh[0]) > 0.1: # Stricter
             self._log_error("hands_too_far", "Keep your hands directly under your shoulders")
-        if abs(an[0] - hp[0]) > 0.2:
+        if abs(an[0] - hp[0]) > 0.1: # Stricter
             self._log_error("knees_too_far", "Keep your knees directly under your hips")
 
     def _eval_lunge(self, lm, frame):
@@ -355,11 +448,11 @@ class ExerciseEvaluator:
             self.reps_completed += 1
             self._feedback = ""
 
-        if kn[0] > an[0] + 0.1: # Threshold adjusted to be slightly more forgiving but strict enough
+        if kn[0] > an[0] + 0.05: # Stricter
             self._log_error("knee_over_toe", "Keep knee behind toes")
             
         # Posture check: Torso leaning forward
-        if not self._check_torso_alignment(lm, idx["sh"], idx["hp"], idx["kn"]):
+        if calculate_angle(lm_xy(lm, idx["sh"]), hp, kn) < 160:
             self._log_error("torso_lean", "Keep your upper body completely straight")
 
     def _eval_bird_dog(self, lm, frame):
@@ -377,7 +470,7 @@ class ExerciseEvaluator:
             
         # Posture check: Spinal arching
         # Check the angle of the back (shoulder-hip) relative to horizontal.
-        if abs(sh[1] - hp[1]) > 0.15: # If hips are way higher or lower than shoulders
+        if abs(sh[1] - hp[1]) > 0.1: # Stricter. Hips and shoulders should be roughly horizontal
             self._log_error("spine_not_neutral", "Keep your back flat like a table")
 
     def _eval_seated_forward_bend(self, lm, frame):
@@ -399,7 +492,7 @@ class ExerciseEvaluator:
         # Posture check: Knees bending to cheat the stretch
         an = lm_xy(lm, idx["an"])
         leg_angle = calculate_angle(hp, kn, an)
-        if self._phase == "HOLDING" and leg_angle < 165:
+        if self._phase == "HOLDING" and leg_angle < 175: # Stricter
             self._log_error("knees_bending", "Keep your legs completely straight")
 
     def _eval_neck_lateral_flexion(self, lm, frame):

@@ -23,13 +23,14 @@ from google import genai
 from google.genai import types
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(BASE_DIR, ".env"))  # reads .env into os.environ
+load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)  # reads .env into os.environ
 
 logger = logging.getLogger(__name__)
 
 # ── Gemini configuration ─────────────────────────────────────────────────────
 
 def _get_client() -> genai.Client:
+    load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)  # Dynamically reload key
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
         raise EnvironmentError(
@@ -75,18 +76,25 @@ Return a single JSON object exactly matching this schema, no markdown, no extra 
 """
 
 
-def _build_user_prompt(complaint: str, pain_level: int, exercises_catalogue: list) -> str:
+def _build_user_prompt(complaint: str, pain_level: int, past_records: str, exercises_catalogue: list) -> str:
     catalogue_str = json.dumps(
         [{"id": e["id"], "name": e["name"], "description": e["description"], "is_unilateral": e.get("is_unilateral", False)}
          for e in exercises_catalogue],
         indent=2,
     )
-    return (
+    prompt_text = (
         f"Patient complaint: {complaint}\n"
-        f"Current pain level (1-10): {pain_level}\n\n"
-        f"Available exercises catalogue:\n{catalogue_str}\n\n"
-        "Generate an appropriate physiotherapy programme from the catalogue above."
+        f"Current pain level (1-10): {pain_level}\n"
     )
+    if past_records and past_records.strip():
+        prompt_text += f"Past Medical Records / Surgeries: {past_records.strip()}\n"
+    
+    prompt_text += (
+        f"\nAvailable exercises catalogue:\n{catalogue_str}\n\n"
+        "Generate an appropriate physiotherapy programme from the catalogue above. "
+        "If a medical report or image is attached to the prompt, please analyze it carefully and incorporate its findings into your decision making."
+    )
+    return prompt_text
 
 
 # ── Public API ───────────────────────────────────────────────────────────────
@@ -98,6 +106,9 @@ def generate_exercise_plan(
     pain_level: int,
     exercises_catalogue: list,
     confidence_threshold: float = 0.6,
+    past_records: str = "",
+    media_bytes: Optional[bytes] = None,
+    media_mime: str = "",
 ) -> Optional[dict]:
     """
     Calls Gemini and returns a validated, filtered plan dict.
@@ -105,17 +116,23 @@ def generate_exercise_plan(
     Retries up to 3 times with exponential backoff on transient errors.
     """
     client = _get_client()
-    user_prompt = _build_user_prompt(complaint, pain_level, exercises_catalogue)
+    user_prompt = _build_user_prompt(complaint, pain_level, past_records, exercises_catalogue)
     full_prompt = f"{SYSTEM_PROMPT}\n\n{user_prompt}"
 
-    model_ids = ["models/gemini-2.5-flash", "models/gemini-2.0-flash"]
+    contents = [full_prompt]
+    if media_bytes and media_mime:
+        contents.append(
+            types.Part.from_bytes(data=media_bytes, mime_type=media_mime)
+        )
+
+    model_ids = ["models/gemini-2.5-flash", "models/gemini-2.0-flash", "models/gemini-1.5-flash"]
 
     for model_id in model_ids:
-        for attempt in range(3):
+        for attempt in range(2):
             try:
                 response = client.models.generate_content(
                     model=model_id,
-                    contents=full_prompt,
+                    contents=contents,
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
                         temperature=0.4,

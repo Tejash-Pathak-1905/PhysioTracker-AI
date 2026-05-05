@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PhysioTracker — A guided recovery</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #FFFFFF;
+    --surface: #FAFAF7;
+    --surface-2: #F4F2EB;
+    --line: #EFEDE6;
+    --line-soft: #E8E5DD;
+    --ink: #1A1A18;
+    --ink-2: #2A2A28;
+    --ink-3: #5A574E;
+    --ink-4: #7A7668;
+    --ink-5: #8A8678;
+    --ink-6: #A8A496;
+    --accent: #7BA68C;        /* calm physio-green */
+    --accent-deep: #5C8770;
+    --warn: #C97C5D;          /* warm coral, not red */
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-weight: 400;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    line-height: 1.5;
+  }
+
+  /* ─── App shell ─── */
+  .app-shell { min-height: 100vh; display: flex; flex-direction: column; }
+  .top-nav {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(255,255,255,0.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+    padding: 18px 32px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand-mark {
+    width: 28px; height: 28px;
+    border: 1.5px solid var(--ink); border-radius: 50%;
+    position: relative;
+  }
+  .brand-mark::after {
+    content: ""; position: absolute; left: 50%; top: 50%;
+    width: 8px; height: 8px; transform: translate(-50%, -50%);
+    background: var(--accent); border-radius: 50%;
+  }
+  .brand-text { font-family: 'Instrument Serif', serif; font-size: 20px; letter-spacing: -0.01em; }
+  .brand-text span { color: var(--ink-5); font-style: italic; }
+  .nav-steps { display: flex; gap: 4px; align-items: center; }
+  .nav-step {
+    font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--ink-5); padding: 8px 16px; border: none; background: transparent;
+    cursor: pointer; transition: color 0.2s; font-family: inherit;
+  }
+  .nav-step.active { color: var(--ink); }
+  .nav-step.done { color: var(--accent-deep); }
+  .nav-step + .nav-step::before {
+    content: "·"; color: var(--ink-6); margin-right: 4px;
+  }
+  .nav-right { font-size: 13px; color: var(--ink-4); }
+
+  main { flex: 1; }
+
+  /* ─── Buttons ─── */
+  .primary-btn {
+    background: var(--ink); color: #FFF;
+    border: none; padding: 14px 24px; border-radius: 2px;
+    font-family: inherit; font-size: 14px; font-weight: 500;
+    letter-spacing: 0.01em; cursor: pointer;
+    transition: background 0.2s, transform 0.15s;
+    display: inline-flex; align-items: center;
+  }
+  .primary-btn:hover { background: var(--accent-deep); }
+  .primary-btn:disabled { background: var(--ink-6); cursor: not-allowed; }
+  .ghost-btn {
+    background: transparent; color: var(--ink-3);
+    border: 1px solid var(--line); padding: 13px 22px; border-radius: 2px;
+    font-family: inherit; font-size: 14px; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .ghost-btn:hover:not(:disabled) { border-color: var(--ink); color: var(--ink); }
+  .ghost-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .choice-btn {
+    background: #FFF; color: var(--ink-3);
+    border: 1px solid var(--line); padding: 20px 16px; border-radius: 2px;
+    font-family: inherit; font-size: 14px; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .choice-btn:hover { border-color: var(--ink-4); color: var(--ink); }
+  .choice-btn.active {
+    border-color: var(--accent); background: rgba(123,166,140,0.08);
+    color: var(--ink);
+  }
+
+  /* ─── Inputs ─── */
+  .text-input {
+    width: 100%; background: transparent;
+    border: none; border-bottom: 1px solid var(--line-soft);
+    font-family: 'Instrument Serif', serif; font-size: 28px;
+    color: var(--ink); padding: 12px 0;
+    outline: none; resize: none;
+    transition: border-color 0.2s;
+    line-height: 1.4;
+  }
+  textarea.text-input { font-family: 'Inter', sans-serif; font-size: 17px; line-height: 1.6; }
+  .text-input:focus { border-bottom-color: var(--accent); }
+  .text-input::placeholder { color: var(--ink-6); }
+
+  .pain-slider {
+    -webkit-appearance: none; appearance: none;
+    height: 2px; background: var(--line); outline: none; border-radius: 2px;
+  }
+  .pain-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--ink); cursor: grab; border: 3px solid #FFF;
+    box-shadow: 0 0 0 1px var(--ink);
+  }
+  .pain-slider::-moz-range-thumb {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--ink); cursor: grab; border: 3px solid #FFF;
+  }
+
+  /* ─── Loading thinking ─── */
+  .thinking-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(123,166,140,0.4); }
+    50% { transform: scale(1.15); opacity: 0.85; box-shadow: 0 0 0 16px rgba(123,166,140,0); }
+  }
+  .check-line {
+    font-size: 14px; color: var(--ink-3);
+    display: flex; align-items: center; gap: 12px;
+    opacity: 0; animation: fadeUp 0.6s ease forwards;
+  }
+  .check-line .check {
+    color: var(--accent); font-weight: 500;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ─── Session stage ─── */
+  .session-stage {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    height: calc(100vh - 67px);
+    background: var(--surface);
+  }
+  .camera-pane {
+    background: #1A1A18;
+    position: relative;
+    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .camera-bg {
+    position: relative; width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at center, #2a2a26 0%, #1A1A18 80%);
+  }
+  .grain {
+    position: absolute; inset: 0;
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(255,255,255,0.02) 0%, transparent 40%),
+      radial-gradient(circle at 80% 70%, rgba(255,255,255,0.02) 0%, transparent 40%);
+    pointer-events: none;
+  }
+  .grain::after {
+    content: ""; position: absolute; inset: 0;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.01) 0px, transparent 1px, transparent 2px);
+    opacity: 0.5;
+  }
+  .motion-trail { position: absolute; inset: 0; pointer-events: none; transition: opacity 0.2s; }
+
+  .hud-top {
+    position: absolute; top: 0; left: 0; right: 0;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 24px 32px;
+    background: linear-gradient(180deg, rgba(0,0,0,0.4) 0%, transparent 100%);
+    color: #FFF; font-size: 13px;
+  }
+  .hud-label { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(255,255,255,0.55); margin-bottom: 4px; }
+  .hud-val { font-family: 'Instrument Serif', serif; font-size: 20px; }
+  .hud-status { display: flex; align-items: center; gap: 10px; font-size: 13px; color: rgba(255,255,255,0.85); }
+  .hud-status .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .hud-status .dot.good { background: var(--accent); box-shadow: 0 0 0 0 rgba(123,166,140,0.6); animation: ping 2s ease-in-out infinite; }
+  .hud-status .dot.warn { background: var(--warn); }
+  @keyframes ping {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(123,166,140,0.4); }
+    50% { box-shadow: 0 0 0 6px rgba(123,166,140,0); }
+  }
+  .hud-exit {
+    background: transparent; border: 1px solid rgba(255,255,255,0.2);
+    color: rgba(255,255,255,0.7); padding: 8px 14px; border-radius: 2px;
+    font-family: inherit; font-size: 12px; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .hud-exit:hover { background: rgba(255,255,255,0.05); color: #FFF; }
+
+  .feedback-banner {
+    position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%);
+    background: rgba(255,255,255,0.97); color: var(--ink);
+    padding: 16px 28px; border-radius: 2px;
+    display: flex; align-items: center; gap: 16px;
+    font-size: 15px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+    animation: bannerIn 0.3s ease;
+    border-left: 3px solid var(--warn);
+  }
+  @keyframes bannerIn {
+    from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
+  }
+  .fb-icon {
+    width: 32px; height: 32px;
+    background: rgba(201,124,93,0.12); color: var(--warn);
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; font-size: 18px;
+  }
+
+  .phase-strip {
+    position: absolute; right: 24px; top: 50%; transform: translateY(-50%);
+    width: 4px; height: 200px; background: rgba(255,255,255,0.08);
+    border-radius: 2px; overflow: hidden;
+    display: flex; align-items: flex-end;
+  }
+  .phase-fill { width: 100%; transition: height 0.05s linear, background 0.3s; }
+
+  .coach-pane {
+    background: #FFF; padding: 36px 32px;
+    border-left: 1px solid var(--line);
+    display: flex; flex-direction: column;
+    overflow-y: auto;
+  }
+  .coach-bubble {
+    background: var(--surface); padding: 24px;
+    border-radius: 2px;
+    border-left: 2px solid var(--accent);
+    min-height: 110px;
+  }
+
+  /* ─── Toolbar / tweaks toggle ─── */
+  .reset-link {
+    background: none; border: none; color: var(--ink-5);
+    font-family: inherit; font-size: 12px; cursor: pointer;
+    text-decoration: underline; text-underline-offset: 3px;
+  }
+  .reset-link:hover { color: var(--ink); }
+
+  /* Mobile collapse */
+  @media (max-width: 880px) {
+    .session-stage { grid-template-columns: 1fr; grid-template-rows: 1fr auto; height: auto; }
+    .coach-pane { border-left: none; border-top: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <template id="__bundler_thumbnail">
+    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style="background: #FAFAF7">
+      <circle cx="50" cy="50" r="22" fill="none" stroke="#1A1A18" stroke-width="2"/>
+      <circle cx="50" cy="50" r="6" fill="#7BA68C"/>
+    </svg>
+  </template>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel" src="coach.jsx"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const { Landing, Intake, PlanOverview, ExerciseSession, Reports } = window.PT;
+
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "tone": "warm",
+      "showCueAnimation": true,
+      "accentHue": 155
+    }/*EDITMODE-END*/;
+
+    function App() {
+      const [stage, setStage] = useState("landing"); // landing | intake | plan | session | reports
+      const [profile, setProfile] = useState(null);
+      const [activeExercise, setActiveExercise] = useState("shoulder_flexion");
+      const tweaks = (window.useTweaks ? window.useTweaks(TWEAK_DEFAULTS) : [TWEAK_DEFAULTS, ()=>{}]);
+      const [tw, setTw] = tweaks;
+
+      // accent hue tweak
+      useEffect(() => {
+        const root = document.documentElement;
+        const hue = tw.accentHue ?? 155;
+        const accent = `oklch(0.72 0.06 ${hue})`;
+        const accentDeep = `oklch(0.55 0.08 ${hue})`;
+        root.style.setProperty("--accent", accent);
+        root.style.setProperty("--accent-deep", accentDeep);
+      }, [tw.accentHue]);
+
+      // ─── Streamlit Bridge ───
+      useEffect(() => {
+        const onMessage = (event) => {
+          if (event.data.type === "streamlit:render") {
+            const { stage: stStage, data: stData } = event.data.args;
+            if (stStage) setStage(stStage);
+            if (stData?.profile) setProfile(stData.profile);
+          }
+        };
+        window.addEventListener("message", onMessage);
+        window.parent.postMessage({ type: "streamlit:componentReady", precision: 1 }, "*");
+        return () => window.removeEventListener("message", onMessage);
+      }, []);
+
+      const sendMessage = (action, payload = {}) => {
+        window.parent.postMessage({
+          isStreamlitMessage: true,
+          type: "streamlit:setComponentValue",
+          value: { action, ...payload }
+        }, "*");
+      };
+
+      // Wrap onComplete and other actions to talk to Streamlit
+      const handleIntakeComplete = (p) => {
+        setProfile(p);
+        sendMessage("complete", { profile: p });
+      };
+
+      const handleStartSession = (plan) => {
+        sendMessage("session", { plan });
+      };
+
+      const handleFinishSession = () => {
+        sendMessage("reports");
+      };
+
+      const navSteps = [
+        { id: "landing", label: "Welcome" },
+        { id: "intake", label: "Intake" },
+        { id: "plan", label: "Plan" },
+        { id: "session", label: "Session" },
+        { id: "reports", label: "Progress" },
+      ];
+      const currentIdx = navSteps.findIndex(s => s.id === stage);
+
+      let body;
+      if (stage === "landing") {
+        body = <Landing userName={profile?.name} onStart={() => setStage(profile ? "plan" : "intake")} />;
+      } else if (stage === "intake") {
+        body = <Intake onComplete={handleIntakeComplete} />;
+      } else if (stage === "plan") {
+        body = <PlanOverview profile={profile || { name: "Friend", complaint: "Right shoulder soreness, worse when reaching overhead.", pain: 4, side: "right" }}
+          onStartSession={handleStartSession} />;
+      } else if (stage === "session") {
+        body = <ExerciseSession exerciseId={activeExercise} profile={profile}
+          onFinish={handleFinishSession} />;
+      } else if (stage === "reports") {
+        body = <Reports profile={profile || { name: "Friend" }} onRestart={() => setStage("session")} />;
+      }
+
+      const showNav = stage !== "session";
+      return (
+        <div className="app-shell" data-screen-label={stage}>
+          {showNav && (
+            <nav className="top-nav">
+              <div className="brand">
+                <div className="brand-mark"></div>
+                <div className="brand-text">PhysioTracker <span>· a guided recovery</span></div>
+              </div>
+              <div className="nav-steps">
+                {navSteps.map((s, i) => (
+                  <button key={s.id} className={`nav-step ${i === currentIdx ? "active" : ""} ${i < currentIdx ? "done" : ""}`}
+                    onClick={() => {
+                      if (s.id === "intake" || s.id === "landing") { setStage(s.id); return; }
+                      if (profile || s.id === "plan" || s.id === "reports") setStage(s.id);
+                    }}>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+              <div className="nav-right">
+                {profile ? <span>Welcome back, <strong style={{color:"var(--ink)"}}>{profile.name}</strong></span> : <button className="reset-link" onClick={() => setStage("intake")}>Skip to demo</button>}
+              </div>
+            </nav>
+          )}
+          <main>{body}</main>
+
+          {window.TweaksPanel && (
+            <window.TweaksPanel title="Tweaks">
+              <window.TweakSection title="Tone & feel">
+                <window.TweakRadio
+                  label="Coach tone"
+                  value={tw.tone}
+                  onChange={v => setTw('tone', v)}
+                  options={[
+                    { value: "warm", label: "Warm" },
+                    { value: "neutral", label: "Neutral" },
+                    { value: "encouraging", label: "Bright" },
+                  ]}
+                />
+                <window.TweakSlider
+                  label="Accent hue"
+                  value={tw.accentHue} min={60} max={260} step={5}
+                  onChange={v => setTw('accentHue', v)}
+                />
+                <window.TweakToggle
+                  label="Show movement-trail animation"
+                  value={tw.showCueAnimation}
+                  onChange={v => setTw('showCueAnimation', v)}
+                />
+              </window.TweakSection>
+              <window.TweakSection title="Demo navigation">
+                <window.TweakButton label="→ Jump to live session" onClick={() => {
+                  if (!profile) setProfile({ name: "Maya", complaint: "Right shoulder", pain: 4, side: "right" });
+                  setStage("session");
+                }} />
+                <window.TweakButton label="→ Jump to progress story" onClick={() => {
+                  if (!profile) setProfile({ name: "Maya", complaint: "Right shoulder", pain: 4, side: "right" });
+                  setStage("reports");
+                }} />
+                <window.TweakButton label="↺ Restart from welcome" onClick={() => { setProfile(null); setStage("landing"); }} />
+              </window.TweakSection>
+            </window.TweaksPanel>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
