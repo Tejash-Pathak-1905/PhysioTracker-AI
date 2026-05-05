@@ -94,7 +94,42 @@ def apply_theme():
         .stButton button p {
             font-weight: 600 !important;
             letter-spacing: 0.02em !important;
+        }
+        
+        /* Primary buttons (Green) get white text */
+        .stButton button[kind="primary"] p {
             color: #FFFFFF !important;
+        }
+        
+        /* Secondary buttons (Light) get dark text */
+        .stButton button[kind="secondary"] p {
+            color: var(--ink) !important;
+        }
+        
+        /* ── Specific Button Overrides ── */
+        .stButton button {
+            border-radius: 8px !important;
+            border: none !important;
+            padding: 0.5rem 1.5rem !important;
+            transition: all 0.2s ease !important;
+        }
+        
+        .stButton button[kind="primary"] {
+            background-color: var(--accent) !important;
+        }
+        
+        .stButton button[kind="primary"]:hover {
+            background-color: var(--accent-deep) !important;
+            box-shadow: 0 4px 12px rgba(123, 166, 140, 0.3) !important;
+        }
+        
+        .stButton button[kind="secondary"] {
+            background-color: var(--surface-2) !important;
+            color: var(--ink) !important;
+        }
+        
+        .stButton button[kind="secondary"]:hover {
+            background-color: var(--line) !important;
         }
         </style>
     """, unsafe_allow_html=True)

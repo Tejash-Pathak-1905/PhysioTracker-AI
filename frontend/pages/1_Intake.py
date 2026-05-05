@@ -26,24 +26,38 @@ with open(exercises_path) as f:
     EXERCISES = json.load(f)
 
 # ── User login / creation ────────────────────────────────────────────────────
-st.subheader("Step 1 – Who are you?")
-username = st.text_input("Enter your name / User ID", placeholder="e.g. Alex")
+st.subheader("Step 1 – Tell us about yourself")
+col1, col2, col3 = st.columns([2, 1, 1])
+with col1:
+    username = st.text_input("Enter your name / User ID", placeholder="e.g. Alex")
+with col2:
+    age = st.number_input("Age", min_value=1, max_value=120, value=25)
+with col3:
+    gender = st.selectbox("Gender", ["Male", "Female", "Others"])
 
 if username:
     db = SessionLocal()
     user = db.query(User).filter(User.name == username).first()
     if not user:
-        user = User(name=username)
+        user = User(name=username, age=age, gender=gender)
         db.add(user); db.commit(); db.refresh(user)
         st.success(f"Welcome, {username}! New profile created.")
     else:
+        # Update age and gender if they changed or were missing
+        if user.age != age or user.gender != gender:
+            user.age = age
+            user.gender = gender
+            db.commit()
         st.info(f"Welcome back, {username}!")
 
     st.session_state["user_id"]   = user.id
     st.session_state["user_name"] = user.name
+    st.session_state["user_age"]  = user.age
+    st.session_state["user_gender"] = user.gender
     db.close()
 
     # ── Intake form ──────────────────────────────────────────────────────────
+    st.markdown("---")
     st.subheader("Step 2 – Tell us about your condition")
     with st.form("intake_form"):
         complaint   = st.text_area("Describe your injury or goal", height=120,
@@ -75,7 +89,9 @@ if username:
                 EXERCISES, 
                 past_records=past_records,
                 media_bytes=file_bytes, 
-                media_mime=mime_type
+                media_mime=mime_type,
+                age=st.session_state.get("user_age"),
+                gender=st.session_state.get("user_gender")
             )
 
         if plan is None:
@@ -103,6 +119,10 @@ if username:
                     priority      = item.get("priority", 99),
                 ))
             db.commit(); db.close()
+
+            # Reset session index for fresh start
+            st.session_state["current_ex_idx"] = 0
+            st.session_state.pop("ai_insights", None)
 
             st.success("✅ Plan saved! Head to the **Exercise Session** page.")
             st.markdown(f"**Condition Summary:** {plan['understood_condition']}")

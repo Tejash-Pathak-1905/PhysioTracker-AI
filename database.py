@@ -27,6 +27,8 @@ class User(Base):
 
     id         = Column(Integer, primary_key=True, index=True)
     name       = Column(String, nullable=False, unique=True)
+    age        = Column(Integer)
+    gender     = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     assessments   = relationship("Assessment",  back_populates="user", cascade="all, delete-orphan")

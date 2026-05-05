@@ -76,13 +76,19 @@ Return a single JSON object exactly matching this schema, no markdown, no extra 
 """
 
 
-def _build_user_prompt(complaint: str, pain_level: int, past_records: str, exercises_catalogue: list) -> str:
+def _build_user_prompt(complaint: str, pain_level: int, past_records: str, exercises_catalogue: list, age: Optional[int] = None, gender: Optional[str] = None) -> str:
     catalogue_str = json.dumps(
         [{"id": e["id"], "name": e["name"], "description": e["description"], "is_unilateral": e.get("is_unilateral", False)}
          for e in exercises_catalogue],
         indent=2,
     )
-    prompt_text = (
+    prompt_text = ""
+    if age:
+        prompt_text += f"Patient Age: {age}\n"
+    if gender:
+        prompt_text += f"Patient Gender: {gender}\n"
+        
+    prompt_text += (
         f"Patient complaint: {complaint}\n"
         f"Current pain level (1-10): {pain_level}\n"
     )
@@ -109,6 +115,8 @@ def generate_exercise_plan(
     past_records: str = "",
     media_bytes: Optional[bytes] = None,
     media_mime: str = "",
+    age: Optional[int] = None,
+    gender: Optional[str] = None,
 ) -> Optional[dict]:
     """
     Calls Gemini and returns a validated, filtered plan dict.
@@ -116,7 +124,7 @@ def generate_exercise_plan(
     Retries up to 3 times with exponential backoff on transient errors.
     """
     client = _get_client()
-    user_prompt = _build_user_prompt(complaint, pain_level, past_records, exercises_catalogue)
+    user_prompt = _build_user_prompt(complaint, pain_level, past_records, exercises_catalogue, age=age, gender=gender)
     full_prompt = f"{SYSTEM_PROMPT}\n\n{user_prompt}"
 
     contents = [full_prompt]
@@ -174,4 +182,82 @@ def generate_exercise_plan(
                 return None
 
     logger.error("All retries exhausted across all model IDs.")
+    return None
+
+
+# ── Report Insights API ───────────────────────────────────────────────────────
+
+REPORT_SYSTEM_PROMPT = """You are a qualified physiotherapy AI assistant generating a personalised progress report for a patient.
+Your report must be empathetic, clear, and medically grounded. Use plain English – no jargon.
+You will receive patient details and their session history data, then produce structured insights.
+
+Return a single JSON object with this exact schema:
+{
+  "headline": "<1 sentence overall progress statement (positive but honest)>",
+  "recovery_status": "<one of: 'On Track', 'Progressing Well', 'Needs Attention', 'Just Started'>",
+  "progress_narrative": "<3-4 sentences explaining what the data shows in plain English, referencing their specific complaint>",
+  "strongest_exercise": "<name of the exercise they performed best in, with a brief reason>",
+  "needs_work": "<the exercise or area needing most improvement, with actionable advice>",
+  "form_insight": "<specific insight about their form quality – what errors appeared most, what it means for their recovery>",
+  "next_session_tip": "<1 concrete tip for their next session based on the data>",
+  "motivational_message": "<short personalised motivational message tied to their specific injury/goal>",
+  "consistency_advice": "<advice on their workout consistency pattern>",
+  "caution_flag": "<any concern the therapist should know, or empty string if none>"
+}
+"""
+
+
+def generate_report_insights(
+    complaint: str,
+    pain_level: int,
+    sessions_summary: str,
+    age: Optional[int] = None,
+    gender: Optional[str] = None,
+) -> Optional[dict]:
+    """
+    Calls Gemini to produce an AI-powered personalised report narrative.
+    Returns a dict of insights or None on failure.
+    """
+    client = _get_client()
+
+    user_prompt = ""
+    if age:
+        user_prompt += f"Patient Age: {age}\n"
+    if gender:
+        user_prompt += f"Patient Gender: {gender}\n"
+
+    user_prompt += (
+        f"Patient complaint: {complaint}\n"
+        f"Initial pain level reported: {pain_level}/10\n\n"
+        f"Session data summary:\n{sessions_summary}\n\n"
+        "Based on the above, generate a personalised physiotherapy progress report."
+    )
+
+    model_ids = ["models/gemini-2.5-flash", "models/gemini-2.0-flash", "models/gemini-1.5-flash"]
+
+    for model_id in model_ids:
+        for attempt in range(2):
+            try:
+                response = client.models.generate_content(
+                    model=model_id,
+                    contents=[f"{REPORT_SYSTEM_PROMPT}\n\n{user_prompt}"],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.5,
+                    ),
+                )
+                return json.loads(response.text)
+            except json.JSONDecodeError as exc:
+                logger.error("Failed to parse report insights JSON: %s", exc)
+                return None
+            except Exception as exc:
+                msg = str(exc)
+                if "503" in msg or "UNAVAILABLE" in msg or "429" in msg:
+                    wait = 2 ** attempt
+                    _time.sleep(wait)
+                    continue
+                logger.error("Report insights API call failed: %s", exc)
+                return None
+
+    logger.error("All retries exhausted for report insights.")
     return None
