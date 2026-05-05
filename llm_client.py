@@ -44,16 +44,26 @@ MODEL_ID = "models/gemini-2.5-flash"
 # ── Prompt construction ──────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = """You are a qualified physiotherapy AI assistant.
-Your job is to create a safe, personalised exercise programme for a patient based
+Your job is to create a TARGETED, SPECIFIC exercise programme for a patient based
 on their reported injury/complaint and pain level.
 
-IMPORTANT SAFETY RULES
-- Never recommend exercises that would aggravate an acute injury.
-- Always include a caution note if the exercise has any contraindication.
-- Confidence must reflect how appropriate the exercise is for this patient's
-  specific complaint (1.0 = perfect fit, 0.0 = contraindicated).
+STRICT RELEVANCE RULES — READ CAREFULLY
+- You MUST only select exercises that DIRECTLY address the patient's specific complaint.
+- Select a MAXIMUM of 3 to 5 exercises. Do NOT pad the programme with unrelated exercises.
+- NEVER include generic cardiovascular or warm-up exercises (e.g. jumping jacks, high knees)
+  UNLESS the patient's complaint is explicitly cardiovascular fitness or general conditioning.
+- NEVER include exercises targeting an unrelated body part.
+  Examples of what NOT to do:
+    * If the patient has a shoulder complaint → do NOT include squats, lunges, or lower-body exercises.
+    * If the patient has a knee complaint → do NOT include shoulder raises or neck exercises.
+    * If the patient has a back complaint → do NOT include bicep curls or shoulder abductions.
+- If an exercise is only marginally related (confidence < 0.75), exclude it entirely.
 - Exercises with confidence < 0.6 will be automatically discarded by the backend.
-- LATERALLY SPECIFIC INSTRUCTIONS: If the patient mentions a specific side (e.g., 'right knee', 'left shoulder'), and the exercise is marked as 'is_unilateral': true, you MUST specify the "side" as "left" or "right". If the exercise is bilateral (is_unilateral: false) or if you want them to do both sides for balance, use "both".
+- Think like a clinician: every exercise in the plan must have a clear therapeutic reason
+  tied directly to the patient's complaint. Use the caution field to state this reason.
+- LATERALLY SPECIFIC INSTRUCTIONS: If the patient mentions a specific side (e.g., 'right knee',
+  'left shoulder'), and the exercise is marked as 'is_unilateral': true, you MUST specify
+  the "side" as "left" or "right". If bilateral or both sides needed, use "both".
 
 OUTPUT FORMAT
 Return a single JSON object exactly matching this schema, no markdown, no extra keys:
@@ -67,8 +77,8 @@ Return a single JSON object exactly matching this schema, no markdown, no extra 
       "confidence": 0.85,
       "sets": 3,
       "reps": 10,
-      "side": "right", 
-      "caution": "<specific note or empty string>",
+      "side": "right",
+      "caution": "<why this exercise is relevant to this specific complaint, plus any safety notes>",
       "priority": 1
     }
   ]
@@ -111,7 +121,7 @@ def generate_exercise_plan(
     complaint: str,
     pain_level: int,
     exercises_catalogue: list,
-    confidence_threshold: float = 0.6,
+    confidence_threshold: float = 0.75,
     past_records: str = "",
     media_bytes: Optional[bytes] = None,
     media_mime: str = "",

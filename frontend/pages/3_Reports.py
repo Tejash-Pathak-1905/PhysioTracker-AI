@@ -8,7 +8,7 @@ import numpy as np
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(root_dir)
 
-from database import SessionLocal, init_db, SessionLog, ExercisePlan, Assessment
+from database import SessionLocal, init_db, SessionLog, ExercisePlan, Assessment, User
 from llm_client import generate_report_insights
 
 init_db()
